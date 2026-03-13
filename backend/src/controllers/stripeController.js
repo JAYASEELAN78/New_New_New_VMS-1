@@ -18,12 +18,16 @@ const createRecordsAfterPayment = async (orderId, sessionId) => {
             const invoiceCount = await Invoice.countDocuments();
             const invoice_id = `INV-${new Date().getFullYear()}-${(invoiceCount + 1).toString().padStart(4, '0')}`;
 
+            const totalAmount = order.finalCost || order.estimatedCost || 0;
+            const subtotal = totalAmount / 1.05; // Reverse 5% tax
+            const taxAmount = totalAmount - subtotal;
+
             const newInvoice = new Invoice({
                 invoice_id,
                 order_id: orderId,
-                amount: order.estimatedCost || 0,
-                tax: 0,
-                total: order.estimatedCost || 0,
+                amount: Math.round(subtotal),
+                tax: Math.round(taxAmount),
+                total: Math.round(totalAmount),
                 date: new Date()
             });
             await newInvoice.save();
@@ -33,14 +37,15 @@ const createRecordsAfterPayment = async (orderId, sessionId) => {
         // 2. Create Payment record for history
         const userWithCompany = await User.findById(order.user_id).populate('company');
         const companyName = userWithCompany?.company?.name || 'Valued Client';
+        const totalPaid = order.finalCost || order.estimatedCost || 0;
 
         const newPayment = new Payment({
             type: 'sales',
             companyName: companyName,
             date: new Date(),
-            paymentType: 'bank', // Stripe usually translates to card/bank
-            amount: order.estimatedCost || 0,
-            detail: `Online Stripe payment for Order ${order.order_id}. Session: ${sessionId}`,
+            paymentType: 'bank',
+            amount: Math.round(totalPaid),
+            detail: `Online Stripe payment for Order ${order.order_id}. Includes 5% GST. Session: ${sessionId}`,
             isActive: true
         });
         await newPayment.save();
@@ -72,6 +77,10 @@ export const createCheckoutSession = async (req, res) => {
 
         const stripe = new Stripe(stripeKey);
 
+        const baseAmount = order.finalCost || order.estimatedCost || order.price || 0;
+        const cgst = baseAmount * 0.025;
+        const sgst = baseAmount * 0.025;
+
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card', 'upi'],
             line_items: [
@@ -79,10 +88,30 @@ export const createCheckoutSession = async (req, res) => {
                     price_data: {
                         currency: 'inr',
                         product_data: {
-                            name: `Payment for Order ${order.order_id}`,
-                            description: order.product_name,
+                            name: (order.product_name || 'Product').replace(/sirt/i, 'shirt'),
+                            description: `Base Price for Order ${order.order_id}`,
                         },
-                        unit_amount: Math.round(amount * 100),
+                        unit_amount: Math.round(baseAmount * 100),
+                    },
+                    quantity: 1,
+                },
+                {
+                    price_data: {
+                        currency: 'inr',
+                        product_data: {
+                            name: 'CGST (2.5%)',
+                        },
+                        unit_amount: Math.round(cgst * 100),
+                    },
+                    quantity: 1,
+                },
+                {
+                    price_data: {
+                        currency: 'inr',
+                        product_data: {
+                            name: 'SGST (2.5%)',
+                        },
+                        unit_amount: Math.round(sgst * 100),
                     },
                     quantity: 1,
                 },

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardContent } from '../components/ui/Card';
-import { ArrowLeft, Box, Calendar, DollarSign, FileText } from 'lucide-react';
+import { ArrowLeft, Box, Calendar, CheckCircle, DollarSign, FileText } from 'lucide-react';
 import StatusBadge from '../components/ui/StatusBadge';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -52,6 +52,7 @@ const OrderDetailsPage = () => {
     const [order, setOrder] = useState(null);
     const [loading, setLoading] = useState(true);
     const [updating, setUpdating] = useState(false);
+    const [selectedStatus, setSelectedStatus] = useState('');
 
     useEffect(() => {
         const fetchOrder = async () => {
@@ -59,7 +60,10 @@ const OrderDetailsPage = () => {
                 // Assume API supports getting single order by ID or we filter
                 const { data } = await api.get(`/api/orders`);
                 const found = data.find(o => o._id === id);
-                if (found) setOrder(found);
+                if (found) {
+                    setOrder(found);
+                    setSelectedStatus(found.status);
+                }
             } catch (error) {
                 toast.error('Failed to load order details');
             } finally {
@@ -69,17 +73,20 @@ const OrderDetailsPage = () => {
         fetchOrder();
     }, [id]);
 
-    const handleUpdateStatus = async (newStatus) => {
-        if (newStatus !== 'Pending' && newStatus !== 'Cancelled' &&
+    const handleUpdateStatus = async () => {
+        if (selectedStatus === order.status) return;
+
+        // Quote Guard
+        if (selectedStatus !== 'Pending' && selectedStatus !== 'Cancelled' &&
             order.priceStatus !== 'Confirmed' && order.priceStatus !== 'Finalized') {
             return toast.error('Client must accept the quoted price first.');
         }
 
         setUpdating(true);
         try {
-            await api.put(`/api/orders/${id}`, { status: newStatus });
-            setOrder({ ...order, status: newStatus });
-            toast.success(`Order status updated to ${newStatus}`);
+            await api.put(`/api/orders/${id}`, { status: selectedStatus });
+            setOrder({ ...order, status: selectedStatus });
+            toast.success(`Order status updated to ${selectedStatus}`);
         } catch (error) {
             toast.error('Failed to update status');
         } finally {
@@ -100,7 +107,7 @@ const OrderDetailsPage = () => {
                     <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
                         Order {order.order_id} <StatusBadge status={order.status} />
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">From: {order.company_id?.name || 'Unknown Client'}</p>
+                    <p className="text-sm text-gray-500 mt-1">From: {order.company_id?.name || order.user_id?.name || 'Unknown Client'}</p>
                 </div>
             </div>
 
@@ -109,16 +116,29 @@ const OrderDetailsPage = () => {
                 <CardContent>
                     <OrderTimeline currentStatus={order.status} />
 
-                    <div className="mt-8 flex justify-end gap-3 border-t border-gray-100 pt-6">
+                    <div className="mt-8 flex justify-end items-center gap-3 border-t border-gray-100 pt-6">
+                        <p className="text-sm text-gray-500 mr-2">Update Workflow Step:</p>
                         <select
-                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                            onChange={(e) => handleUpdateStatus(e.target.value)}
-                            value={order.status}
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[200px]"
+                            onChange={(e) => setSelectedStatus(e.target.value)}
+                            value={selectedStatus}
                             disabled={updating}
                         >
-                            {WORKFLOW_STEPS.map(s => <option key={s} value={s}>{s}</option>)}
+                            {WORKFLOW_STEPS.slice(WORKFLOW_STEPS.indexOf(order.status)).map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
                         </select>
-                        <button disabled={updating} className="btn-primary">Update Status</button>
+                        <button 
+                            disabled={updating || selectedStatus === order.status} 
+                            onClick={handleUpdateStatus}
+                            className={`px-6 py-2 rounded-lg text-sm font-bold shadow-md transition-all ${
+                                selectedStatus === order.status 
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200' 
+                                : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600'
+                            } border`}
+                        >
+                            {updating ? 'Updating...' : 'Update Status'}
+                        </button>
                     </div>
                 </CardContent>
             </Card>
@@ -167,15 +187,34 @@ const OrderDetailsPage = () => {
                                 <p className="text-sm text-gray-500">Estimated Cost & Price Status</p>
 
                                 <div className="mt-2 flex items-center justify-between">
-                                    <span className={`px-2.5 py-1 text-xs font-bold uppercase rounded-md border ${order.priceStatus === 'Confirmed' ? 'bg-green-100 text-green-700 border-green-200' :
+                                    <span className={`px-2.5 py-1 text-xs font-bold uppercase rounded-md border ${
+                                        order.priceStatus === 'Confirmed' ? 'bg-green-100 text-green-700 border-green-200' :
                                         order.priceStatus === 'Quoted' ? 'bg-amber-100 text-amber-700 border-amber-200' :
-                                            'bg-gray-100 text-gray-500 border-gray-200'
-                                        }`}>
-                                        {order.priceStatus}
+                                        order.priceStatus === 'Negotiating' ? 'bg-amber-500 text-white border-amber-600 animate-pulse' :
+                                        'bg-gray-100 text-gray-500 border-gray-200'
+                                    }`}>
+                                        {order.priceStatus === 'Negotiating' ? 'Client Negotiating' : order.priceStatus}
                                     </span>
                                 </div>
+                                {order.priceStatus === 'Negotiating' && (
+                                    <p className="text-xs text-amber-600 mt-2 font-medium">
+                                        Client has sent a counter-offer. You can send a new quote below.
+                                    </p>
+                                )}
 
-                                {order.priceStatus !== 'Confirmed' && order.priceStatus !== 'Finalized' ? (
+                                {order.priceStatus === 'Confirmed' || order.priceStatus === 'Finalized' ? (
+                                    <div className="mt-4 p-4 bg-green-50 border border-green-100 rounded-xl flex items-center justify-between">
+                                        <div>
+                                            <p className="text-xs font-bold text-green-600 uppercase tracking-wider">Accepted Price</p>
+                                            <p className="font-bold text-green-900 text-2xl mt-1">
+                                                ₹{order.estimatedCost?.toLocaleString()}
+                                            </p>
+                                        </div>
+                                        <div className="bg-green-100 p-2 rounded-lg">
+                                            <CheckCircle className="w-6 h-6 text-green-600" />
+                                        </div>
+                                    </div>
+                                ) : (
                                     <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                                         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Quote Client</p>
                                         <div className="flex gap-2">
@@ -208,10 +247,6 @@ const OrderDetailsPage = () => {
                                             </button>
                                         </div>
                                     </div>
-                                ) : (
-                                    <p className="font-semibold text-gray-900 mt-2 text-lg">
-                                        ₹{order.estimatedCost?.toLocaleString()}
-                                    </p>
                                 )}
                             </div>
                         </div>

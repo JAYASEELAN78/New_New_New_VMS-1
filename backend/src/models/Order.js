@@ -10,7 +10,7 @@ const orderSchema = new mongoose.Schema({
     delivery_date: { type: Date },
     status: { type: String, enum: ['Pending', 'Payment Acceptance', 'Material Received', 'Processing', 'Quality Check', 'Completed', 'Dispatched', 'Delivered', 'Cancelled'], default: 'Pending' },
     payment_status: { type: String, enum: ['Pending', 'Paid', 'Failed'], default: 'Pending' },
-    priceStatus: { type: String, enum: ['Pending', 'Quoted', 'Confirmed', 'Finalized'], default: 'Pending' },
+    priceStatus: { type: String, enum: ['Pending', 'Quoted', 'Confirmed', 'Negotiating', 'Finalized'], default: 'Pending' },
     finalCost: { type: Number },
     // Fields from client portal
     unit: { type: String, default: 'pcs' },

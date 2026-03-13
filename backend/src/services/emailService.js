@@ -5,17 +5,25 @@ import Product from '../models/Product.js';
 import Customer from '../models/Customer.js';
 import { generateBillPDF } from './pdfGenerator.js';
 import dotenv from 'dotenv';
+import path from 'path';
+// Load dotenv here just in case it wasn't hoisted correctly
+dotenv.config({ path: path.resolve(process.cwd(), '../.env') }); // Or rely on index.js
 
-// ========== Resend HTTP API (Primary - works over HTTPS) ==========
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-if (resend) {
-  console.log('📧 Resend HTTP email configured (API key found)');
-} else {
-  console.log('📧 Resend not configured - no RESEND_API_KEY in .env');
-}
+// Check if email service is configured dynamically
+export const isEmailConfigured = () => {
+  return !!process.env.RESEND_API_KEY || (!!process.env.EMAIL_USER && !!process.env.EMAIL_PASS);
+};
 
-// ========== Nodemailer SMTP (Fallback) ==========
-const createTransporter = () => {
+// Helper: Get Resend Instance
+const getResendInstance = () => {
+  if (process.env.RESEND_API_KEY) {
+    return new Resend(process.env.RESEND_API_KEY);
+  }
+  return null;
+};
+
+// Helper: Get SMTP Transporter
+const getTransporter = () => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     return null;
   }
@@ -29,20 +37,12 @@ const createTransporter = () => {
   });
 };
 
-let transporter = createTransporter();
-
-// Refresh transporter if env changes
-export const refreshTransporter = () => {
-  transporter = createTransporter();
-};
-
-// Check if email service is configured
-export const isEmailConfigured = () => {
-  return !!resend || !!transporter;
-};
-
 // Send email - tries Resend HTTP first, then SMTP fallback
 const sendEmail = async (to, subject, html, attachments = []) => {
+  console.log("SEND_EMAIL DEBUG: RESEND_KEY =", process.env.RESEND_API_KEY, " EMAIL_USER =", process.env.EMAIL_USER);
+  const resend = getResendInstance();
+  const transporter = getTransporter();
+
   // Method 1: Resend HTTP API (works on any network)
   if (resend) {
     try {
@@ -620,7 +620,102 @@ export const sendReportEmail = async (data, options, recipientEmails) => {
 
 
 // ================================================================
-//  6. GENERIC NOTIFICATION
+//  6. ORDER STATUS NOTIFICATION
+// ================================================================
+export const sendOrderStatusEmail = async (order, oldStatus, newStatus, recipientEmail) => {
+  const subject = `Order Status Update: ${order.order_id} - V.M.S GARMENTS`;
+
+  const statusColors = {
+    'Pending': '#6b7280', // Gray
+    'Payment Acceptance': '#3b82f6', // Blue
+    'Material Received': '#8b5cf6', // Purple
+    'Processing': '#f59e0b', // Amber
+    'Quality Check': '#0ea5e9', // Sky Blue
+    'Completed': '#10b981', // Emerald
+    'Dispatched': '#f97316', // Orange
+    'Delivered': '#059669', // Strong Green
+    'Cancelled': '#ef4444' // Red
+  };
+
+  const newStatusColor = statusColors[newStatus] || '#374151';
+
+  const bodyHtml = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+      Hello, the status of your order <strong>${order.order_id}</strong> has been updated.
+    </p>
+
+    <!-- Order status comparison card -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px;">
+      ${detailRow('Order ID', order.order_id, { bold: true })}
+      ${detailRow('Product', order.product_name)}
+      ${detailRow('Previous Status', oldStatus)}
+      ${detailRow('New Status', `<span style="color:${newStatusColor};">${newStatus.toUpperCase()}</span>`, { large: true, bold: true })}
+    </table>
+
+    <p style="margin:24px 0 0;font-size:13px;color:#6b7280;text-align:center;">
+      You can track your order in the client portal for more details.
+    </p>
+  `;
+
+  const html = buildEmailLayout({
+    title: 'Order Status Update',
+    subtitle: `Order ${order.order_id} is now ${newStatus}`,
+    icon: '📦',
+    accentFrom: '#1e3a8a',
+    accentTo: '#3b82f6',
+    bodyHtml,
+  });
+
+  return sendEmail(recipientEmail, subject, html);
+};
+
+// ================================================================
+//  7. QUOTE EMAIL NOTIFICATION
+// ================================================================
+export const sendQuoteEmail = async (order, quotedAmount, recipientEmail) => {
+  const subject = `Price Quote for Order ${order.order_id} - V.M.S GARMENTS`;
+  const formattedAmount = Number(quotedAmount).toLocaleString('en-IN');
+  const priceHtml = '<span style="color:#059669;font-size:20px;">\u20b9 ' + formattedAmount + '</span>';
+  const subtitleText = 'Order ' + order.order_id + ' \u2014 \u20b9 ' + formattedAmount;
+
+  const bodyHtml = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+      Hello, a price quote has been provided for your order <strong>${order.order_id}</strong>.
+    </p>
+
+    <!-- Quote details card -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px;">
+      ${detailRow('Order ID', order.order_id, { bold: true })}
+      ${detailRow('Product', order.product_name || 'N/A')}
+      ${detailRow('Quantity', order.quantity ? order.quantity + ' ' + (order.unit || 'pcs') : 'N/A')}
+      ${detailRow('Quoted Price', priceHtml, { large: true, bold: true })}
+    </table>
+
+    <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:14px 18px;margin:0 0 24px;">
+      <p style="margin:0;font-size:13px;color:#92400e;font-weight:500;">
+        \ud83d\udca1 Please log in to the client portal to review and confirm this quote.
+      </p>
+    </div>
+
+    <p style="margin:24px 0 0;font-size:13px;color:#6b7280;text-align:center;">
+      If you have any questions, please contact us through the messaging system.
+    </p>
+  `;
+
+  const html = buildEmailLayout({
+    title: 'Price Quote',
+    subtitle: subtitleText,
+    icon: '\ud83d\udcb0',
+    accentFrom: '#065f46',
+    accentTo: '#10b981',
+    bodyHtml,
+  });
+
+  return sendEmail(recipientEmail, subject, html);
+};
+
+// ================================================================
+//  8. GENERIC NOTIFICATION
 // ================================================================
 export const sendNotification = async (to, subject, message) => {
   const bodyHtml = `
@@ -691,6 +786,8 @@ export default {
   sendPasswordResetEmail,
   sendLowStockAlert,
   sendReportEmail,
+  sendOrderStatusEmail,
+  sendQuoteEmail,
   sendNotification,
   calculateAndSendDailySummary,
   isEmailConfigured,

@@ -12,7 +12,7 @@ export const getStatusColor = (status) => {
 }
 
 export const ORDER_STATUSES = [
-    'Pending', 'Payment Acceptance', 'Material Received', 'Processing', 'Completed', 'Delivered', 'Cancelled'
+    'Pending', 'Payment Acceptance', 'Material Received', 'Processing', 'Completed', 'Delivered'
 ]
 
 export const formatDate = (date) => {

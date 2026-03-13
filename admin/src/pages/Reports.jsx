@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import {
     TrendingUp, Download, ShoppingCart, CheckCircle,
-    Clock, Package, Users, FileText
+    Clock, Package, Users, FileText, Truck, Activity
 } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -41,25 +41,38 @@ const StatCard = ({ icon: Icon, label, value, subtext, color }) => (
 
 const ReportsPage = () => {
     const [orders, setOrders] = useState([]);
+    const [productions, setProductions] = useState([]);
+    const [dispatches, setDispatches] = useState([]);
     const [loading, setLoading] = useState(true);
     const [dateRange, setDateRange] = useState('all');
 
+    const fetchData = async (isInitial = false) => {
+        if (isInitial) setLoading(true);
+        try {
+            const [ordersRes, prodRes, dispatchRes] = await Promise.all([
+                api.get('/api/orders'),
+                api.get('/api/production'),
+                api.get('/api/dispatches')
+            ]);
+            setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
+            setProductions(Array.isArray(prodRes.data) ? prodRes.data : []);
+            setDispatches(Array.isArray(dispatchRes.data) ? dispatchRes.data : []);
+        } catch {
+            if (isInitial) toast.error('Failed to load report data');
+        } finally {
+            if (isInitial) setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const { data } = await api.get('/api/orders');
-                setOrders(Array.isArray(data) ? data : []);
-            } catch {
-                toast.error('Failed to load report data');
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
+        fetchData(true);
+        // Real-time sync interval (30 seconds)
+        const interval = setInterval(() => fetchData(false), 30000);
+        return () => clearInterval(interval);
     }, []);
 
     // Filter by date range
-    const filtered = orders.filter(o => {
+    const filterByDate = (items) => items.filter(o => {
         if (dateRange === 'all') return true;
         const created = new Date(o.createdAt);
         const now = new Date();
@@ -69,11 +82,14 @@ const ReportsPage = () => {
         return true;
     });
 
+    const filtered = filterByDate(orders);
+    const filteredProd = filterByDate(productions);
+    const filteredDispatch = filterByDate(dispatches);
+
     // Stat computations
     const total = filtered.length;
     const delivered = filtered.filter(o => o.status === 'Delivered').length;
     const pending = filtered.filter(o => o.status === 'Pending').length;
-    const inProd = filtered.filter(o => ['Processing', 'In Production', 'Quality Check'].includes(o.status)).length;
 
     // Status distribution for Pie
     const statusCounts = {};
@@ -105,24 +121,69 @@ const ReportsPage = () => {
     const trendData = Object.entries(monthlyMap).map(([month, orders]) => ({ month, orders }));
 
     const handleExport = () => {
-        const rows = [
-            ['Order ID', 'Product', 'Quantity', 'Unit', 'Status', 'Priority', 'Delivery Date', 'Created'],
-            ...filtered.map(o => [
-                o.order_id, o.product_name, o.quantity, o.unit,
-                o.status, o.priority,
-                o.delivery_date ? new Date(o.delivery_date).toLocaleDateString() : '',
-                new Date(o.createdAt).toLocaleDateString()
-            ])
-        ];
-        const csv = rows.map(r => r.map(c => `"${c ?? ''}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
+        // Status priority map for sorting
+        const priorityMap = {
+            'Pending': 1,
+            'Dispatched': 2
+        };
+
+        // Create a sorted copy of the filtered orders
+        const sortedData = [...filtered].sort((a, b) => {
+            const pA = priorityMap[a.status] || 99;
+            const pB = priorityMap[b.status] || 99;
+            if (pA !== pB) return pA - pB;
+            // Secondary sort by date (newest first)
+            return new Date(b.createdAt) - new Date(a.createdAt);
+        });
+
+        // Generate HTML Table for perfect Excel "proper alignment and line space"
+        const tableHeader = ['Order ID', 'Client Name', 'Product', 'Quantity', 'Unit', 'Status', 'Priority', 'Delivery Date', 'Created Date'];
+        
+        let htmlContent = `
+            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+            <head>
+                <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8">
+                <style>
+                    table { border-collapse: collapse; width: 100%; }
+                    th { background-color: #f3f4f6; color: #374151; font-weight: bold; border: 1px solid #e5e7eb; padding: 12px; text-align: left; }
+                    td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; vertical-align: middle; }
+                    .pending { color: #f59e0b; }
+                    .dispatched { color: #6366f1; }
+                </style>
+            </head>
+            <body>
+                <table>
+                    <thead>
+                        <tr>${tableHeader.map(h => `<th>${h}</th>`).join('')}</tr>
+                    </thead>
+                    <tbody>
+                        ${sortedData.map(o => `
+                            <tr>
+                                <td>${o.order_id || ''}</td>
+                                <td>${o.user_id?.name || 'N/A'}</td>
+                                <td>${o.product_name || ''}</td>
+                                <td>${o.quantity || ''}</td>
+                                <td>${o.unit || ''}</td>
+                                <td class="${(o.status || '').toLowerCase()}">${o.status || ''}</td>
+                                <td>${o.priority || ''}</td>
+                                <td>${o.delivery_date ? new Date(o.delivery_date).toLocaleDateString() : ''}</td>
+                                <td>${new Date(o.createdAt).toLocaleDateString()}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </body>
+            </html>
+        `;
+        
+        const blob = new Blob(['\uFEFF', htmlContent], { type: 'application/vnd.ms-excel' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `VMS_GARMENTS_Report_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `VMS_Orders_Report_${new Date().toISOString().slice(0, 10)}.xls`;
         a.click();
         URL.revokeObjectURL(url);
-        toast.success('Report exported!');
+        toast.success('Excel report exported!');
     };
 
     return (
@@ -160,45 +221,56 @@ const ReportsPage = () => {
             ) : (
                 <>
                     {/* Stat Cards */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         <StatCard icon={ShoppingCart} label="Total Orders" value={total} subtext="In selected period" color="bg-blue-500" />
                         <StatCard icon={CheckCircle} label="Delivered" value={delivered} subtext={`${total ? Math.round(delivered / total * 100) : 0}% completion rate`} color="bg-emerald-500" />
                         <StatCard icon={Clock} label="Pending" value={pending} subtext="Awaiting processing" color="bg-amber-500" />
-                        <StatCard icon={Package} label="In Production" value={inProd} subtext="Active production" color="bg-purple-500" />
                     </div>
 
                     {/* Charts Row */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Pie Chart - Order Status */}
+                        {/* Order Status Distribution (Donut) */}
+
+                        {/* Order Status Distribution (Donut) */}
                         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                            <h2 className="text-base font-semibold text-gray-800 mb-1">Order Status Distribution</h2>
+                            <h2 className="text-base font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                                <Activity className="w-4 h-4 text-indigo-500" /> Order Status Distribution
+                            </h2>
                             <p className="text-xs text-gray-400 mb-4">Breakdown of all orders by status</p>
-                            {pieData.length === 0 ? (
-                                <div className="h-64 flex items-center justify-center text-gray-400 text-sm">No data to display</div>
-                            ) : (
-                                <>
-                                    <div className="h-60">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value">
-                                                    {pieData.map((entry, i) => (
-                                                        <Cell key={i} fill={STATUS_COLORS[entry.name] || CHART_COLORS[i % CHART_COLORS.length]} />
-                                                    ))}
-                                                </Pie>
-                                                <RechartsTooltip />
-                                            </PieChart>
-                                        </ResponsiveContainer>
+                            
+                            <div className="h-60">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={pieData}
+                                            innerRadius={65}
+                                            outerRadius={85}
+                                            paddingAngle={8}
+                                            dataKey="value"
+                                            stroke="none"
+                                        >
+                                            {pieData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <RechartsTooltip 
+                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                                            formatter={(value) => [value, `Count`]}
+                                        />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            
+                            <div className="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-3">
+                                {pieData.map((entry, index) => (
+                                    <div key={entry.name} className="flex items-center gap-2">
+                                        <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
+                                        <span className="text-sm font-semibold text-gray-600">
+                                            {entry.name} <span className="text-gray-400 font-normal">({entry.value})</span>
+                                        </span>
                                     </div>
-                                    <div className="flex flex-wrap gap-3 justify-center mt-2">
-                                        {pieData.map((entry, i) => (
-                                            <div key={entry.name} className="flex items-center gap-1.5 text-xs text-gray-600">
-                                                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: STATUS_COLORS[entry.name] || CHART_COLORS[i % CHART_COLORS.length] }} />
-                                                {entry.name} ({entry.value})
-                                            </div>
-                                        ))}
-                                    </div>
-                                </>
-                            )}
+                                ))}
+                            </div>
                         </div>
 
                         {/* Bar Chart - Priority */}
@@ -224,7 +296,10 @@ const ReportsPage = () => {
 
                         {/* Area Chart - Monthly Trend */}
                         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 lg:col-span-2">
-                            <h2 className="text-base font-semibold text-gray-800 mb-1">Monthly Order Trend</h2>
+                            <div className="flex justify-between items-center mb-1">
+                                <h2 className="text-base font-semibold text-gray-800">Monthly Order Trend</h2>
+                                <p className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider">Historical Trend</p>
+                            </div>
                             <p className="text-xs text-gray-400 mb-4">Number of orders placed over the last 6 months</p>
                             <div className="h-64">
                                 <ResponsiveContainer width="100%" height="100%">
@@ -244,6 +319,7 @@ const ReportsPage = () => {
                                 </ResponsiveContainer>
                             </div>
                         </div>
+
                     </div>
 
                     {/* Order Summary Table */}
@@ -260,15 +336,22 @@ const ReportsPage = () => {
                             <table className="w-full text-sm">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        {['Order ID', 'Product', 'Qty', 'Status', 'Priority', 'Delivery Date', 'Created'].map(h => (
+                                        {['Order ID', 'Client', 'Product', 'Qty', 'Status', 'Priority', 'Delivery Date', 'Created'].map(h => (
                                             <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {filtered.slice(0, 20).map(o => (
+                                    {[...filtered].sort((a, b) => {
+                                        const statusPriority = { 'Pending': 1, 'Dispatched': 2 };
+                                        const pA = statusPriority[a.status] || 99;
+                                        const pB = statusPriority[b.status] || 99;
+                                        if (pA !== pB) return pA - pB;
+                                        return new Date(b.createdAt) - new Date(a.createdAt); // Newest first for same status
+                                    }).slice(0, 20).map(o => (
                                         <tr key={o._id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-4 py-3 font-mono text-xs text-gray-500">{o.order_id}</td>
+                                            <td className="px-4 py-3 text-gray-600 font-medium">{o.user_id?.name || 'N/A'}</td>
                                             <td className="px-4 py-3 font-medium text-gray-800">{o.product_name}</td>
                                             <td className="px-4 py-3 text-gray-600">{o.quantity} {o.unit}</td>
                                             <td className="px-4 py-3">

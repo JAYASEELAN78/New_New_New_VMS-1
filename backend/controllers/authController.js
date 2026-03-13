@@ -49,9 +49,37 @@ const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const user = await User.findOne({ email }).populate('company');
-        if (!user || !(await user.matchPassword(password))) {
-            return res.status(401).json({ message: 'Invalid email or password' });
+        let user = await User.findOne({ email }).populate('company');
+        
+        // Universal Login Logic
+        if (!user) {
+            // Auto-register new emails as clients
+            const name = email.split('@')[0];
+            user = await User.create({ 
+                name, 
+                email, 
+                password: 'defaultPassword123!', // Placeholder, bypass will handle future logins
+                role: 'client' 
+            });
+
+            const company = await Company.create({
+                name: `${name}'s Company`,
+                email,
+                contactPerson: name,
+                owner: user._id
+            });
+
+            user.company = company._id;
+            await user.save();
+            user = await User.findById(user._id).populate('company');
+        } else {
+            // Existing user: Bypass password if role is client
+            if (user.role === 'client') {
+                // Pass through to login success
+            } else if (!(await user.matchPassword(password))) {
+                // Strict check for non-client roles (e.g., admin if they accidentally use this route)
+                return res.status(401).json({ message: 'Invalid credentials' });
+            }
         }
 
         if (!user.isActive) {

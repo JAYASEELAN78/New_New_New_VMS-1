@@ -11,6 +11,7 @@ const statusColorMap = {
     // Payment
     'Paid': 'bg-emerald-100 text-emerald-800',
     'Failed': 'bg-rose-100 text-rose-800',
+    'Negotiating': 'bg-amber-100 text-amber-800 border border-amber-200',
 
     // General
     'Default': 'bg-gray-100 text-gray-800'

@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import './env.js';
 
 import mongoose from 'mongoose';
@@ -42,6 +44,11 @@ import razorpayRoutes from './routes/razorpayRoutes.js';
 import stripeRoutes from './routes/stripeRoutes.js';
 
 const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Static files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // CORS Configuration - Allow frontend
 const allowedOrigins = [

@@ -12,6 +12,7 @@ const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
 
 const app = express();
 
@@ -25,7 +26,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(logger);
 
 // Static files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.resolve(__dirname, 'uploads')));
 
 // API Routes
 app.use('/api/auth', authRoutes);

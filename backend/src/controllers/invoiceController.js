@@ -106,214 +106,189 @@ export const generateInvoicePDF = async (req, res) => {
         const doc = new PDFDocument({ margin: 30, size: 'A4' });
 
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="invoice-${invoice.invoice_id}.pdf"`);
+        res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.invoice_id}.pdf"`);
 
         doc.pipe(res);
 
         // --- Document Layout & Borders ---
         const startX = 30;
-        const endX = 565; // A4 width (595.28) - 30 margin
+        const endX = 565;
         const startY = 30;
-        const endY = 810; // A4 height (841.89) - ~30 margin
+        const endY = 810;
 
         // Draw Outer Border
         doc.rect(startX, startY, endX - startX, endY - startY).stroke();
 
-        // --- Header Section ---
-        // Header Text
-        doc.font('Helvetica-Bold').fontSize(24).fillColor('#1d4ed8').text('V.M.S GARMENTS', startX + 50, startY + 15);
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text('GSTIN: 33AZRPM4425F2ZA', 400, startY + 20);
+        // --- Header Section (Grid Style) ---
+        // Add Logo (Top Left)
+        try {
+            const logoPath = 'd:\\VMS__final-main\\client\\public\\assets\\logo.png';
+            doc.image(logoPath, startX + 5, startY + 5, { width: 45 });
+        } catch (err) {
+            console.error('Logo not found, skipping image');
+        }
 
-        // Header Divider Line
-        doc.moveTo(startX, startY + 50).lineTo(endX, startY + 50).stroke();
+        // Logo & Name Block (Top Left Offset)
+        doc.font('Helvetica-Bold').fontSize(22).fillColor('#000').text('V.M.S GARMENTS', startX + 60, startY + 5);
 
-        // --- Office Details & Invoice Details ---
-        doc.font('Helvetica').fontSize(8);
-        doc.text('OFF : 61C9, Anupparpalayam Puthur, Tirupur. 641652', startX + 5, startY + 55);
-        doc.text('Email: vmsgarments@gmail.com', startX + 5, startY + 70);
-        doc.text('Mob: 9080573831', startX + 5, startY + 85);
+        // Address Block (Below Name)
+        doc.font('Helvetica').fontSize(8).text('8/514-B, Sedapalayam Road, Arulpuram,', startX + 60, startY + 30);
+        doc.text('Karaipudur (PO), Tirupur - 641 605.', startX + 60, startY + 40);
 
-        // Vertical divider for Invoice Details
-        doc.moveTo(350, startY + 50).lineTo(350, startY + 110).stroke();
+        // Contact Block (Top Right)
+        doc.font('Helvetica-Bold').fontSize(8).text('Mob : 98430 82511', 410, startY + 5);
+        doc.font('Helvetica').fontSize(7).text('E-mail : vmsgarments1981@gmail.com', 410, startY + 15);
+        doc.font('Helvetica-Bold').fontSize(8).text('GSTIN: 33BCVPM6343J1Z3', 410, startY + 25);
 
-        doc.font('Helvetica-Bold').text('Invoice Number', 360, startY + 55);
-        doc.text(`: ${invoice.invoice_id}`, 450, startY + 55);
+        // Header Lines
+        doc.moveTo(startX, startY + 55).lineTo(endX, startY + 55).stroke();
 
-        doc.text('Invoice Date', 360, startY + 70);
-        doc.text(`: ${new Date(invoice.date).toLocaleDateString('en-GB')}`, 450, startY + 70);
+        // Invoice No & Date Row
+        doc.fontSize(9).text('Invoice No.', startX + 5, startY + 62);
+        doc.fontSize(12).text(invoice.invoice_id?.replace('INV-', '') || '070', startX + 70, startY + 60);
 
-        // Tax Invoice Title Divider
-        doc.moveTo(startX, startY + 110).lineTo(endX, startY + 110).stroke();
-        doc.font('Helvetica-Bold').fontSize(14).fillColor('#1e40af')
-            .text('TAX INVOICE', startX, startY + 115, { align: 'center', underline: true });
-        doc.fillColor('#000');
-        // Another divider below Tax Invoice
-        doc.moveTo(startX, startY + 135).lineTo(endX, startY + 135).stroke();
+        // Tax Invoice Box (Center)
+        doc.rect(250, startY + 55, 120, 25).stroke();
+        doc.font('Helvetica-Bold').fontSize(10).text('TAX INVOICE', 250, startY + 62, { width: 120, align: 'center' });
 
-        // --- Consignee Details ---
+        doc.font('Helvetica').fontSize(9).text('Invoice Date :', 380, startY + 62);
+        doc.font('Helvetica-Bold').text(new Date(invoice.date).toLocaleDateString('en-GB'), 470, startY + 62);
+
+        doc.moveTo(startX, startY + 80).lineTo(endX, startY + 80).stroke();
+
+        // State & Code Row
+        doc.font('Helvetica').fontSize(9).text('State : TAMILNADU', startX + 5, startY + 86);
+        doc.text('Code : 33', startX + 5, startY + 104);
+
+        doc.moveTo(310, startY + 80).lineTo(310, startY + 130).stroke(); // Vertical divider
+
+        doc.text(`Transportation Mode: Truck`, 315, startY + 86);
+        doc.text(`Vehicle Number      : TN36 AK 8086`, 315, startY + 104);
+        doc.text(`Place of Supply     : 33BCVPM6343J1Z3`, 315, startY + 118);
+
+        doc.moveTo(startX, startY + 130).lineTo(endX, startY + 130).stroke();
+
+        // --- To, M/s (Consignee) ---
         const clientCompany = invoice.order_id?.company_id?.name || '';
         const clientName = invoice.order_id?.user_id?.name || 'Valued Client';
-        const clientEmail = invoice.order_id?.user_id?.email || '';
-        const clientPhone = invoice.order_id?.user_id?.phone || '';
+        const clientGST = '33AADCS8200N1ZB'; 
 
-        doc.font('Helvetica-Oblique').fontSize(8).text('Consignee Copy', startX + 5, startY + 140);
+        doc.font('Helvetica').text('To, M/s.', startX + 5, startY + 135);
+        doc.font('Helvetica-Bold').fontSize(11).text(clientCompany || clientName, startX + 50, startY + 135);
 
-        doc.font('Helvetica-Bold').fontSize(9).text('BUYER:', startX + 5, startY + 155);
-        doc.font('Helvetica').text(clientCompany || clientName, startX + 70, startY + 155);
+        doc.font('Helvetica').fontSize(9).text("Party's GSTIN :", startX + 5, startY + 175);
+        doc.font('Helvetica-Bold').text(clientGST, startX + 80, startY + 175);
+        doc.font('Helvetica').text('State : Tamilnadu', 400, startY + 175);
+        doc.text('Code : 33', 510, startY + 175);
 
-        doc.font('Helvetica-Bold').text('STATE:', startX + 5, startY + 170);
-        doc.font('Helvetica').text('TAMILNADU', startX + 70, startY + 170); // Placeholder
+        doc.moveTo(startX, startY + 195).lineTo(endX, startY + 195).stroke();
 
-        doc.font('Helvetica-Bold').text('TRANSPORT:', startX + 5, startY + 185);
+        // --- Table Section ---
+        const tableY = startY + 195;
+        const tableBottom = endY - 140;
 
-        // Vertical Divider for Buyer Details
-        doc.moveTo(350, startY + 135).lineTo(350, startY + 200).stroke();
-
-        doc.font('Helvetica-Bold').text('MOB:', 360, startY + 155);
-        doc.font('Helvetica').text(clientPhone || 'N/A', 410, startY + 155);
-
-        doc.font('Helvetica-Bold').text('EMAIL:', 360, startY + 170);
-        doc.font('Helvetica').text(clientEmail || 'N/A', 410, startY + 170);
-
-        // End Consignee Header Line
-        doc.moveTo(startX, startY + 200).lineTo(endX, startY + 200).stroke();
-
-        // --- Table Headers ---
-        const tableHeaderY = startY + 200;
+        // Column Headers
         doc.font('Helvetica-Bold').fontSize(8);
-
-        // Define Columns: S.No (30), Product (100), HSN (50), Sizes (55), RatePP (60), PcsPack (40), RatePack (60), NoPacks (50), Amount (90)
-        // Total = 535
-        const cols = [
-            { x: startX, w: 30, text: 'S.No' },
-            { x: startX + 30, w: 100, text: 'Product' },
-            { x: startX + 130, w: 50, text: 'HSN\nCode' },
-            { x: startX + 180, w: 55, text: 'Sizes/\nPieces' },
-            { x: startX + 235, w: 60, text: 'Rate Per\nPiece' },
-            { x: startX + 295, w: 40, text: 'Pcs in\nPack' },
-            { x: startX + 335, w: 60, text: 'Rate Per\nPack' },
-            { x: startX + 395, w: 50, text: 'No Of\nPacks' },
-            { x: startX + 445, w: 90, text: 'Amount\nRs.' }
+        const colMap = [
+            { x: startX, w: 25, t: 'S.\nNo.' },
+            { x: startX + 25, w: 35, t: 'DC No.' },
+            { x: startX + 60, w: 240, t: 'Description of Goods' },
+            { x: startX + 300, w: 50, t: 'HSN CODE' },
+            { x: startX + 350, w: 50, t: 'Qty.' },
+            { x: startX + 400, w: 60, t: 'Rate\nRs.   P.' },
+            { x: startX + 460, w: 75, t: 'Amount\nRs.      P.' }
         ];
 
-        // Draw Headers & Vertical Lines
-        cols.forEach((col, i) => {
-            if (i > 0) doc.moveTo(col.x, tableHeaderY).lineTo(col.x, endY - 150).stroke();
-            doc.text(col.text, col.x, tableHeaderY + 5, { width: col.w, align: 'center' });
+        colMap.forEach((c, i) => {
+            doc.text(c.t, c.x, tableY + 5, { width: c.w, align: 'center' });
+            if (i > 0) doc.moveTo(c.x, tableY).lineTo(c.x, tableBottom).stroke();
         });
 
-        // Line under table headers
-        doc.moveTo(startX, tableHeaderY + 25).lineTo(endX, tableHeaderY + 25).stroke();
+        doc.moveTo(startX, tableY + 30).lineTo(endX, tableY + 30).stroke();
 
-        // --- Table Data ---
+        // Table Content
         const order = invoice.order_id;
-        const productName = order ? order.product_name : 'Job Work / Service';
-        const qty = order ? order.quantity : 1;
-        const amount = invoice.amount;
+        const qty = order?.quantity || 0;
+        const rate = (invoice.amount / qty) || 0;
+        const amount = invoice.amount || 0;
 
-        const rowY = tableHeaderY + 35;
-        doc.font('Helvetica').fontSize(9);
+        doc.font('Helvetica').fontSize(10);
+        doc.text('1', colMap[0].x, tableY + 40, { width: colMap[0].w, align: 'center' });
+        doc.text(order?.product_name || 'Goods', colMap[2].x + 10, tableY + 40, { width: colMap[2].w - 20 });
+        doc.text('6109', colMap[3].x, tableY + 40, { width: colMap[3].w, align: 'center' });
+        doc.text(qty.toString(), colMap[4].x, tableY + 40, { width: colMap[4].w, align: 'center' });
 
-        doc.text('1', cols[0].x, rowY, { width: cols[0].w, align: 'center' });
-        doc.text(productName, cols[1].x + 5, rowY, { width: cols[1].w - 10, align: 'left' });
-        doc.text('6104', cols[2].x, rowY, { width: cols[2].w, align: 'center' }); // Example HSN
-        doc.text('Multiple', cols[3].x, rowY, { width: cols[3].w, align: 'center' });
-        doc.text((amount / qty).toFixed(2), cols[4].x, rowY, { width: cols[4].w, align: 'center' });
-        doc.text('1', cols[5].x, rowY, { width: cols[5].w, align: 'center' }); // Pcs in pack
-        doc.text((amount / qty).toFixed(2), cols[6].x, rowY, { width: cols[6].w, align: 'center' });
-        doc.text(`${qty}`, cols[7].x, rowY, { width: cols[7].w, align: 'center' });
-        doc.text(`${amount.toFixed(2)}`, cols[8].x, rowY, { width: cols[8].w, align: 'center' });
+        // Rate Rs P
+        doc.text(Math.floor(rate).toString(), colMap[5].x + 5, tableY + 40, { width: 30, align: 'right' });
+        doc.text((rate % 1).toFixed(2).split('.')[1], colMap[5].x + 38, tableY + 40);
 
-        // --- Footer Box (Bottom 150pt) ---
-        const footerY = endY - 150;
-        doc.moveTo(startX, footerY).lineTo(endX, footerY).stroke();
+        // Amount Rs P
+        doc.text(Math.floor(amount).toLocaleString(), colMap[6].x + 5, tableY + 40, { width: 45, align: 'right' });
+        doc.text((amount % 1).toFixed(2).split('.')[1], colMap[6].x + 55, tableY + 40);
 
-        // Bottom Grid Lines
-        doc.moveTo(250, footerY).lineTo(250, footerY + 70).stroke();
-        doc.moveTo(400, footerY).lineTo(400, footerY + 90).stroke();
+        // --- Bottom Summary ---
+        doc.moveTo(startX, tableBottom).lineTo(endX, tableBottom).stroke();
 
-        // Summary details box (Left Side)
-        doc.font('Helvetica-Bold').fontSize(9);
-        doc.text('Total Packs', startX + 5, footerY + 10);
-        doc.text(`: ${qty}`, startX + 80, footerY + 10);
+        const subtotal = amount;
+        const cgst = subtotal * 0.025;
+        const sgst = subtotal * 0.025;
+        const grandTotal = subtotal + cgst + sgst;
 
-        doc.text('Bill Amount', startX + 5, footerY + 30);
-        doc.text(`: ${invoice.total}`, startX + 80, footerY + 30);
+        // Left Bottom (Rupees in words & Bank Details)
+        doc.font('Helvetica').fontSize(8).text('Rupees', startX + 5, tableBottom + 12);
+        const words = numberToWords(Math.round(grandTotal));
+        doc.font('Helvetica-Bold').fontSize(10).text(`${words} Rupees only`, startX + 50, tableBottom + 11);
 
-        doc.text('In words', startX + 5, footerY + 50);
-        doc.font('Helvetica-Oblique').fontSize(8);
-        const amountInWords = numberToWords(Math.round(invoice.total));
-        doc.text(`: Rupees ${amountInWords ? amountInWords + ' Only' : 'Zero Only'}`, startX + 80, footerY + 50, { width: 160 });
+        doc.moveTo(startX, tableBottom + 45).lineTo(410, tableBottom + 45).stroke();
 
-        // Middle Section (Bundles and Total GST)
-        doc.font('Helvetica-Bold').fontSize(8);
-        doc.text('NUM OF BUNDLES :', 255, footerY + 10);
-        doc.fontSize(10).text('1', 370, footerY + 10); // default
+        doc.font('Helvetica-Bold').fontSize(8).text('Name of the Account Holder: V.M.S GARMENTS', startX + 5, tableBottom + 55);
+        doc.font('Helvetica').text('Name of the Bank          : AXIS BANK', startX + 5, tableBottom + 65);
+        doc.text('Bank Account Number       : 922030044486398', startX + 5, tableBottom + 75);
+        doc.text('Bank Branch IFSC          : UTIB0001205', startX + 5, tableBottom + 85);
 
-        // Total GST Box
-        doc.rect(255, footerY + 45, 135, 20).stroke('red');
-        doc.fillColor('red').fontSize(9).text('TOTAL GST', 260, footerY + 50);
-        doc.text(`${amount > 0 ? (amount * 0.05).toFixed(0) : 0}`, 350, footerY + 50, { width: 35, align: 'right' });
-        doc.fillColor('#000').stroke('#000'); // Reset colors
+        doc.moveTo(startX, tableBottom + 105).lineTo(410, tableBottom + 105).stroke();
+        doc.font('Helvetica-Oblique').fontSize(8).text("Receiver's Signature", startX + 110, tableBottom + 112);
 
-        // Right Section (Tax Breakdown)
-        const taxBase = amount;
-        const discount = 0;
-        const taxableAmt = taxBase - discount;
-        const cgst = taxableAmt * 0.025; // Example 2.5%
-        const sgst = taxableAmt * 0.025; // Example 2.5%
+        // Right Bottom (Totals)
+        doc.moveTo(410, tableBottom).lineTo(410, endY).stroke();
 
-        doc.font('Helvetica').fontSize(8);
-        let taxY = footerY + 5;
-        doc.text('Product Amt', 405, taxY); doc.font('Helvetica-Bold').text(`${taxBase.toFixed(2)}`, 490, taxY, { width: 70, align: 'right' });
-        taxY += 12;
-        doc.font('Helvetica').text('Discount', 405, taxY); doc.font('Helvetica-Bold').text(`${discount.toFixed(2)}`, 490, taxY, { width: 70, align: 'right' });
-        taxY += 12;
-        doc.font('Helvetica').text('Taxable Amt', 405, taxY); doc.font('Helvetica-Bold').text(`${taxableAmt.toFixed(2)}`, 490, taxY, { width: 70, align: 'right' });
-        taxY += 12;
-        doc.fillColor('red');
-        doc.font('Helvetica').text('CGST @ 2.5%', 405, taxY); doc.font('Helvetica-Bold').text(`${cgst.toFixed(2)}`, 490, taxY, { width: 70, align: 'right' });
-        taxY += 12;
-        doc.font('Helvetica').text('SGST @ 2.5%', 405, taxY); doc.font('Helvetica-Bold').text(`${sgst.toFixed(2)}`, 490, taxY, { width: 70, align: 'right' });
-        taxY += 12;
-        doc.fillColor('#000');
-        doc.font('Helvetica').text('Round Off', 405, taxY); doc.font('Helvetica-Bold').text('0.00', 490, taxY, { width: 70, align: 'right' });
+        let totalY = tableBottom + 5;
+        doc.font('Helvetica-Bold').fontSize(9).text('TOTAL', 415, totalY);
+        doc.text(Math.floor(subtotal).toLocaleString(), 495, totalY, { width: 45, align: 'right' });
+        doc.text('00', 545, totalY);
 
-        // Total divider
-        doc.moveTo(startX, footerY + 70).lineTo(400, footerY + 70).stroke(); // horizontal
-        doc.moveTo(400, footerY + 83).lineTo(endX, footerY + 83).stroke(); // horizontal total line
+        totalY += 20;
+        doc.font('Helvetica').fontSize(9).text('Add : CGST 2.5%', 415, totalY);
+        doc.text(Math.floor(cgst).toLocaleString(), 495, totalY, { width: 45, align: 'right' });
+        doc.text('00', 545, totalY);
 
-        // Total Amount
-        doc.font('Helvetica-Bold').fontSize(10);
-        doc.text('Total Amt', 405, footerY + 88);
-        doc.text(`${invoice.total.toFixed(2)}`, 490, footerY + 88, { width: 70, align: 'right' });
+        totalY += 20;
+        doc.text('Add : SGST 2.5%', 415, totalY);
+        doc.text(Math.floor(sgst).toLocaleString(), 495, totalY, { width: 45, align: 'right' });
+        doc.text('00', 545, totalY);
 
-        // --- Terms and Bank Details (Bottom Left) ---
-        const termY = footerY + 75;
-        doc.font('Helvetica-Bold').fontSize(8).fillColor('#1d4ed8').text('Terms And Conditions', startX + 5, termY, { underline: true });
-        doc.fillColor('#000').font('Helvetica').fontSize(6);
-        doc.text('Subject to Tirupur Jurisdiction.', startX + 5, termY + 12);
-        doc.text('Payment by Cheque/DD only, payable at Tirupur.', startX + 5, termY + 20);
-        doc.text('Cheques made in favour of V.M.S GARMENTS to be sent to Tirupur Address', startX + 5, termY + 28);
+        doc.moveTo(410, totalY + 15).lineTo(endX, totalY + 15).stroke();
 
-        // Bank Details Box
-        doc.rect(startX + 5, termY + 40, 310, 30).stroke('#d97706');
-        doc.font('Helvetica-Bold').fillColor('red').fontSize(7).text('Bank Details:', startX + 8, termY + 43);
-        doc.fillColor('#1d4ed8').text('ACC NAME : V.M.S GARMENTS', startX + 8, termY + 51);
-        doc.text('BANK: SOUTH INDIAN BANK', startX + 8, termY + 59);
-        doc.fillColor('#d97706').text('ACC NUM: 0338073000002328    BRANCH: TIRUPUR    IFSC: SIBL0000338', startX + 8, termY + 67);
+        totalY += 25;
+        doc.text('Round Off', 415, totalY);
+        doc.text('00', 545, totalY);
 
-        // --- Signature ---
-        doc.font('Helvetica-Oblique').fillColor('#000').fontSize(8);
-        doc.text('Certified that above particulars are true', 370, termY + 15, { width: 170, align: 'center' });
-        doc.text('and correct', 370, termY + 25, { width: 170, align: 'center' });
+        doc.moveTo(410, totalY + 15).lineTo(endX, totalY + 15).stroke();
 
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#1d4ed8');
-        doc.text('For V.M.S GARMENTS', 370, termY + 60, { width: 170, align: 'center' });
+        totalY += 25;
+        doc.font('Helvetica-Bold').fontSize(11).text('GRAND TOTAL', 415, totalY - 2);
+        doc.text(Math.floor(grandTotal).toLocaleString(), 495, totalY, { width: 45, align: 'right' });
+        doc.text('00', 545, totalY);
+
+        // Signature Area
+        doc.font('Helvetica').fontSize(8).text('For V.M.S GARMENTS', 415, tableBottom + 145, { width: 145, align: 'center' });
+        doc.font('Helvetica-Bold').fontSize(12).text('V. M. J', 415, tableBottom + 175, { width: 145, align: 'center' }); // Placeholder for signature
+        doc.font('Helvetica').fontSize(8).text('Authorised Signatory', 415, tableBottom + 205, { width: 145, align: 'center' });
 
         doc.end();
 
     } catch (error) {
+        console.error('PDF Generation Error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };

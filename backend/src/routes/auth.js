@@ -12,19 +12,50 @@ const JWT_SECRET = process.env.JWT_SECRET || 'vms-garments-secret-key';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '670522390868-j16615o0n8s8s43cj4hkfcs4rv96nmp8.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// Login
 router.post('/login', async (req, res) => {
+    console.log("LOGIN ATTEMPT REACHED FOR", req.body.email);
     try {
         const { email, password } = req.body;
 
-        const user = await User.findOne({ email, isActive: true }).populate('company');
+        let user = await User.findOne({ email }).populate('company');
+        
+        // Universal Login Logic for Client Panel
         if (!user) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+            // Auto-register new emails as clients
+            const name = email.split('@')[0];
+            const hashedPassword = await bcrypt.hash('defaultPassword123!', 10);
+            
+            user = new User({ 
+                name, 
+                email, 
+                password: hashedPassword,
+                role: 'client',
+                isActive: true
+            });
+
+            const company = new Company({
+                name: `${name}'s Company`,
+                email,
+                phone: ''
+            });
+
+            await company.save();
+            user.company = company._id;
+            await user.save();
+            
+            user = await User.findById(user._id).populate('company');
+        } else {
+            // Only enforce password check for admin accounts
+            // All clients/staff get universal access (password-free login)
+            if (user.role === 'admin') {
+                // Admins should use the /admin/login endpoint, block them here
+                return res.status(403).json({ success: false, message: 'Admin accounts must use the admin portal.' });
+            }
+            // For all other roles (client, staff, etc.) — bypass password check
         }
 
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        if (!user.isActive) {
+            return res.status(403).json({ success: false, message: 'Account is deactivated. Contact admin.' });
         }
 
         const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '7d' });
@@ -43,6 +74,7 @@ router.post('/login', async (req, res) => {
             }
         });
     } catch (error) {
+        console.error("LOGIN ERROR TRACE:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 });

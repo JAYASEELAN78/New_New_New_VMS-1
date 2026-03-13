@@ -21,13 +21,46 @@ const Invoices = () => {
         finally { setLoading(false) }
     }
 
-    const handleDownload = (id) => {
+    const handleDownload = async (id, filename) => {
+        const tId = toast.loading('Preparing download...');
+        console.log('--- Starting Secure Download ---');
         try {
-            const token = localStorage.getItem('token');
-            const url = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/invoices/${id}/download?token=${token}`;
-            window.open(url, '_blank');
+            // Using axios 'api' ensures Bearer token is in HEADERS
+            // Cache-buster prevents any browser/proxy caching
+            const response = await api.get(`/api/invoices/${id}/download?_cb=${Date.now()}`, {
+                responseType: 'blob',
+                timeout: 30000
+            });
+
+            if (response.data.type === 'application/json') {
+                // We got an error message instead of a PDF blob
+                const text = await response.data.text();
+                const error = JSON.parse(text);
+                throw new Error(error.message || 'Server error');
+            }
+
+            // Data is now in memory - IDM CANNOT intercept this the normal way
+            const blob = new Blob([response.data], { type: 'application/pdf' });
+            const blobUrl = window.URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.style.display = 'none';
+            link.download = (filename || 'invoice') + '.pdf';
+            
+            document.body.appendChild(link);
+            link.click();
+            
+            // Wait slightly before cleanup
+            setTimeout(() => {
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(blobUrl);
+            }, 100);
+
+            toast.success('Download complete', { id: tId });
         } catch (err) {
-            toast.error('Download failed');
+            console.error('Secure Download Error:', err);
+            toast.error(err.message || 'Download failed. Please refresh.', { id: tId });
         }
     }
 
