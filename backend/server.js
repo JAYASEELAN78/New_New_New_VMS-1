@@ -36,7 +36,7 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/inventory', inventoryRoutes); // Added inventoryRoutes
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
