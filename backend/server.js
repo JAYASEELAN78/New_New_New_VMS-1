@@ -18,7 +18,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-    origin: '*',
+    origin: 'https://new-new-new-vms-1-ulcm.vercel.app', 'https://new-new-new-vms-1-95xt.vercel.app',
     credentials: true
 }));
 app.use(express.json());
